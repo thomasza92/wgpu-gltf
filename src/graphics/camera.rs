@@ -17,14 +17,13 @@ pub fn make_camera(w: u32, h: u32) -> CameraData {
     }
 }
 
-pub fn orbit_eye(yaw: f32, pitch: f32, radius: f32, target: Vec3) -> Vec3 {
+pub fn forward_from_yaw_pitch(yaw: f32, pitch: f32) -> Vec3 {
     let pitch = pitch.clamp(-1.53, 1.53);
     let cp = pitch.cos();
     let sp = pitch.sin();
     let cy = yaw.cos();
     let sy = yaw.sin();
-    let dir = glam::vec3(cy * cp, sp, -sy * cp);
-    target + dir * radius
+    glam::vec3(cy * cp, sp, -sy * cp)
 }
 
 pub fn update_camera_buffer(
@@ -32,13 +31,12 @@ pub fn update_camera_buffer(
     camera_buf: &Buffer,
     w: u32,
     h: u32,
+    eye: Vec3,
     yaw: f32,
     pitch: f32,
-    radius: f32,
-    target: Vec3,
 ) {
-    let eye = orbit_eye(yaw, pitch, radius, target);
-    let view = Mat4::look_at_rh(eye, target, Vec3::Y);
+    let forward = forward_from_yaw_pitch(yaw, pitch);
+    let view = Mat4::look_at_rh(eye, eye + forward, Vec3::Y);
     let aspect = (w as f32).max(1.0) / (h as f32).max(1.0);
     let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 100.0);
     let vp = (proj * view).to_cols_array();
