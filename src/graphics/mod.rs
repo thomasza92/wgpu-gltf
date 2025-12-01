@@ -4,20 +4,21 @@ mod loader;
 mod model;
 mod pipeline;
 
+use egui_wgpu::{Renderer, RendererOptions, ScreenDescriptor};
+use egui_winit::State as EguiWinitState;
 use std::{path::Path, time::Instant};
+use wgpu::{
+    Adapter, BindGroup, Buffer, Color, CommandEncoderDescriptor, Device, ExperimentalFeatures,
+    Features, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference, Queue,
+    RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RequestAdapterOptions,
+    StoreOp, Surface, SurfaceConfiguration, Texture, TextureView, TextureViewDescriptor,
+};
 use winit::{
     dpi::PhysicalSize,
     event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent},
     event_loop::EventLoopProxy,
     keyboard::KeyCode,
     window::Window,
-};
-
-use wgpu::{
-    Adapter, BindGroup, Buffer, Color, CommandEncoderDescriptor, Device, ExperimentalFeatures,
-    Features, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference, Queue,
-    RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RequestAdapterOptions,
-    StoreOp, Surface, SurfaceConfiguration, Texture, TextureView, TextureViewDescriptor,
 };
 
 pub type Rc<T> = std::sync::Arc<T>;
@@ -90,6 +91,18 @@ pub async fn create_graphics(window: Rc<Window>, proxy: EventLoopProxy<Graphics>
     let eye = glam::vec3(2.0, 2.0, 3.5);
     let yaw = 0.6_f32;
     let pitch = 0.5_f32;
+    let egui_ctx = egui::Context::default();
+    let viewport_id = egui_ctx.viewport_id();
+    let egui_state = EguiWinitState::new(
+        egui_ctx.clone(),
+        viewport_id,
+        window.as_ref(),
+        None,
+        None,
+        None,
+    );
+
+    let egui_renderer = Renderer::new(&device, surface_config.format, RendererOptions::default());
 
     let gfx = Graphics {
         window: window.clone(),
@@ -120,13 +133,15 @@ pub async fn create_graphics(window: Rc<Window>, proxy: EventLoopProxy<Graphics>
         move_down: false,
         boost_speed: false,
         last_frame_time: Instant::now(),
+        egui_ctx,
+        egui_state,
+        egui_renderer,
     };
 
     let _ = proxy.send_event(gfx);
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
 pub struct Graphics {
     pub(crate) window: Rc<Window>,
     instance: Instance,
@@ -156,6 +171,9 @@ pub struct Graphics {
     move_down: bool,
     boost_speed: bool,
     last_frame_time: Instant,
+    egui_ctx: egui::Context,
+    egui_state: EguiWinitState,
+    egui_renderer: Renderer,
 }
 
 impl Graphics {
@@ -250,7 +268,32 @@ impl Graphics {
             self.yaw,
             self.pitch,
         );
+        let raw_input = self.egui_state.take_egui_input(&self.window);
+        let full_output = self.egui_ctx.run(raw_input, |ctx| {
+            egui::Window::new("Debug / Controls")
+                .default_pos(egui::pos2(10.0, 10.0))
+                .show(ctx, |ui| {
+                    ui.label("WASD + J/K to move, hold Shift to boost");
+                    ui.separator();
+                    ui.label(format!(
+                        "Eye:  ({:.2}, {:.2}, {:.2})",
+                        self.eye.x, self.eye.y, self.eye.z
+                    ));
+                    ui.label(format!("Yaw:  {:.2}", self.yaw));
+                    ui.label(format!("Pitch:{:.2}", self.pitch));
+                });
+        });
 
+        let egui::FullOutput {
+            platform_output,
+            textures_delta,
+            shapes,
+            pixels_per_point,
+            ..
+        } = full_output;
+        self.egui_state
+            .handle_platform_output(&self.window, platform_output);
+        let paint_jobs = self.egui_ctx.tessellate(shapes, pixels_per_point);
         let frame = self
             .surface
             .get_current_texture()
@@ -260,10 +303,9 @@ impl Graphics {
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor { label: None });
-
         {
             let mut r_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: None,
+                label: Some("scene_pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
                     view: &view,
                     depth_slice: None,
@@ -298,12 +340,57 @@ impl Graphics {
                 r_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
             }
         }
+        for (id, image_delta) in textures_delta.set {
+            self.egui_renderer
+                .update_texture(&self.device, &self.queue, id, &image_delta);
+        }
+
+        let screen_descriptor = ScreenDescriptor {
+            size_in_pixels: [self.surface_config.width, self.surface_config.height],
+            pixels_per_point,
+        };
+        let _user_command_buffers = self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
+        {
+            let r_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("egui_pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            let mut r_pass = r_pass.forget_lifetime();
+            self.egui_renderer
+                .render(&mut r_pass, &paint_jobs, &screen_descriptor);
+        }
+        for id in textures_delta.free {
+            self.egui_renderer.free_texture(&id);
+        }
 
         self.queue.submit(Some(encoder.finish()));
         frame.present();
     }
 
     pub fn handle_window_event(&mut self, event: &WindowEvent) {
+        let response = self.egui_state.on_window_event(&self.window, event);
+        if response.consumed {
+            return;
+        }
+
         match event {
             WindowEvent::KeyboardInput {
                 event:
@@ -351,6 +438,7 @@ impl Graphics {
 
     pub fn handle_device_event(&mut self, event: &DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
+            self.egui_state.on_mouse_motion((*dx, *dy));
             if self.rotating {
                 self.yaw -= (*dx as f32) * 0.0025;
                 self.pitch -= (*dy as f32) * 0.0025;
