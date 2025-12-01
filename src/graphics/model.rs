@@ -1,6 +1,8 @@
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
-use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout, Buffer, VertexAttribute, VertexBufferLayout};
+use wgpu::{
+    BindGroup, BindGroupLayout, Buffer, VertexAttribute, VertexBufferLayout, util::DeviceExt,
+};
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
@@ -44,7 +46,11 @@ pub struct Model {
     pub recommended_xform: glam::Mat4,
 }
 
-pub fn create_model_ubo(device: &wgpu::Device, layout: &BindGroupLayout, model: Mat4) -> (Buffer, BindGroup) {
+pub fn create_model_ubo(
+    device: &wgpu::Device,
+    layout: &BindGroupLayout,
+    model: Mat4,
+) -> (Buffer, BindGroup) {
     let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("model_ubo"),
         contents: bytemuck::cast_slice(&[model.to_cols_array()]),
@@ -53,7 +59,10 @@ pub fn create_model_ubo(device: &wgpu::Device, layout: &BindGroupLayout, model: 
     let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("model_bg"),
         layout,
-        entries: &[wgpu::BindGroupEntry { binding: 0, resource: buf.as_entire_binding() }],
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: buf.as_entire_binding(),
+        }],
     });
     (buf, bg)
 }

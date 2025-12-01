@@ -1,5 +1,5 @@
 use glam::{Mat4, Vec3};
-use wgpu::{Queue, Buffer};
+use wgpu::{Buffer, Queue};
 
 pub struct CameraData {
     pub view_proj: Mat4,
@@ -12,7 +12,9 @@ pub fn make_camera(w: u32, h: u32) -> CameraData {
     let view = Mat4::look_at_rh(eye, tgt, up);
     let aspect = (w as f32).max(1.0) / (h as f32).max(1.0);
     let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 100.0);
-    CameraData { view_proj: proj * view }
+    CameraData {
+        view_proj: proj * view,
+    }
 }
 
 pub fn orbit_eye(yaw: f32, pitch: f32, radius: f32, target: Vec3) -> Vec3 {
@@ -38,7 +40,7 @@ pub fn update_camera_buffer(
     let eye = orbit_eye(yaw, pitch, radius, target);
     let view = Mat4::look_at_rh(eye, target, Vec3::Y);
     let aspect = (w as f32).max(1.0) / (h as f32).max(1.0);
-    let proj  = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 100.0);
+    let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 100.0);
     let vp = (proj * view).to_cols_array();
     queue.write_buffer(camera_buf, 0, bytemuck::cast_slice(&[vp]));
 }

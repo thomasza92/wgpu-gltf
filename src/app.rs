@@ -1,11 +1,16 @@
-use crate::graphics::{create_graphics, Graphics, Rc};
+use crate::graphics::{Graphics, Rc, create_graphics};
+
+use std::time::{Duration, Instant};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
-    event::{WindowEvent, DeviceEvent},
-    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
+    event::{DeviceEvent, StartCause, WindowEvent},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::{Window, WindowId},
 };
+
+const FPS: u64 = 120;
+const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / FPS);
 
 enum State {
     Ready(Graphics),
@@ -14,12 +19,14 @@ enum State {
 
 pub struct App {
     state: State,
+    render_target: Instant,
 }
 
 impl App {
     pub fn new(event_loop: &EventLoop<Graphics>) -> Self {
         Self {
             state: State::Init(Some(event_loop.create_proxy())),
+            render_target: Instant::now(), // NEW
         }
     }
 
@@ -59,6 +66,15 @@ impl ApplicationHandler<Graphics> for App {
         self.state = State::Ready(graphics);
     }
 
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: StartCause) {
+        if self.render_target <= Instant::now() {
+            self.render_target += FRAME_TIME;
+            if let State::Ready(gfx) = &mut self.state {
+                gfx.request_redraw();
+            }
+        }
+    }
+
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -67,7 +83,16 @@ impl ApplicationHandler<Graphics> for App {
     ) {
         match event {
             WindowEvent::Resized(size) => self.resized(size),
-            WindowEvent::RedrawRequested => self.draw(),
+            WindowEvent::RedrawRequested => {
+                self.draw();
+                let now = Instant::now();
+                if self.render_target <= now {
+                    self.render_target = now + FRAME_TIME;
+                    if let State::Ready(gfx) = &mut self.state {
+                        gfx.request_redraw();
+                    }
+                }
+            }
             WindowEvent::CloseRequested => event_loop.exit(),
             other => {
                 if let State::Ready(gfx) = &mut self.state {
@@ -88,9 +113,7 @@ impl ApplicationHandler<Graphics> for App {
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if let State::Ready(gfx) = &mut self.state {
-            gfx.request_redraw();
-        }
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.render_target));
     }
 }

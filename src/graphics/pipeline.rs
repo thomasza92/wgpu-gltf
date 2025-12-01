@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 use wgpu::{
-    BindGroup, BindGroupLayout, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType, ColorTargetState,
-    CompareFunction, DepthBiasState, DepthStencilState, Device, FragmentState, MultisampleState, PipelineLayoutDescriptor,
-    PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource,
-    ShaderStages, TextureFormat, TextureSampleType, TextureViewDimension, VertexState,
+    BindGroup, BindGroupLayout, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType,
+    ColorTargetState, CompareFunction, DepthBiasState, DepthStencilState, Device, FragmentState,
+    MultisampleState, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, RenderPipeline,
+    RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, TextureFormat,
+    TextureSampleType, TextureViewDimension, VertexState,
 };
 
 use crate::graphics::model::Vertex;
@@ -62,7 +63,11 @@ pub fn create_bind_group_layouts(device: &Device) -> Layouts {
             },
         ],
     });
-    Layouts { camera_bgl, model_bgl, material_bgl }
+    Layouts {
+        camera_bgl,
+        model_bgl,
+        material_bgl,
+    }
 }
 
 pub fn create_pipeline(
@@ -84,12 +89,19 @@ pub fn create_pipeline(
     let camera_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("camera_bg"),
         layout: &layouts.camera_bgl,
-        entries: &[wgpu::BindGroupEntry { binding: 0, resource: camera_buf.as_entire_binding() }],
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: camera_buf.as_entire_binding(),
+        }],
     });
 
     let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("pipeline_layout"),
-        bind_group_layouts: &[&layouts.camera_bgl, &layouts.model_bgl, &layouts.material_bgl],
+        bind_group_layouts: &[
+            &layouts.camera_bgl,
+            &layouts.model_bgl,
+            &layouts.material_bgl,
+        ],
         push_constant_ranges: &[],
     });
 

@@ -1,22 +1,23 @@
-mod pipeline;
-mod depth;
 mod camera;
-mod model;
+mod depth;
 mod loader;
+mod model;
+mod pipeline;
 
 use std::path::Path;
 
 use winit::{
     dpi::PhysicalSize,
-    event::{WindowEvent, MouseButton, ElementState, MouseScrollDelta, DeviceEvent},
+    event::{DeviceEvent, ElementState, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::EventLoopProxy,
     window::Window,
 };
 
 use wgpu::{
-    Adapter, BindGroup, Buffer, Color, CommandEncoderDescriptor, Device, ExperimentalFeatures, Features, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference, Queue, RenderPassColorAttachment,
-    RenderPassDescriptor, RenderPipeline, RequestAdapterOptions, StoreOp, Surface,
-    SurfaceConfiguration, Texture, TextureView, TextureViewDescriptor,
+    Adapter, BindGroup, Buffer, Color, CommandEncoderDescriptor, Device, ExperimentalFeatures,
+    Features, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference, Queue,
+    RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RequestAdapterOptions,
+    StoreOp, Surface, SurfaceConfiguration, Texture, TextureView, TextureViewDescriptor,
 };
 
 pub type Rc<T> = std::sync::Arc<T>;
@@ -24,12 +25,14 @@ pub type Rc<T> = std::sync::Arc<T>;
 use camera::{make_camera, update_camera_buffer};
 use depth::create_depth;
 use loader::load_gltf_model;
-use model::{create_model_ubo, Model};
+use model::{Model, create_model_ubo};
 use pipeline::{create_bind_group_layouts, create_pipeline};
 
 pub async fn create_graphics(window: Rc<Window>, proxy: EventLoopProxy<Graphics>) {
     let instance = Instance::default();
-    let surface = instance.create_surface(std::sync::Arc::clone(&window)).unwrap();
+    let surface = instance
+        .create_surface(std::sync::Arc::clone(&window))
+        .unwrap();
     let adapter = instance
         .request_adapter(&RequestAdapterOptions {
             power_preference: PowerPreference::default(),
@@ -40,16 +43,14 @@ pub async fn create_graphics(window: Rc<Window>, proxy: EventLoopProxy<Graphics>
         .expect("Could not get an adapter (GPU).");
 
     let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: Features::empty(),
-                required_limits: Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
-                memory_hints: MemoryHints::Performance,
-                trace: Default::default(),
-                experimental_features: ExperimentalFeatures::disabled(),
-            },
-        )
+        .request_device(&wgpu::DeviceDescriptor {
+            label: None,
+            required_features: Features::empty(),
+            required_limits: Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
+            memory_hints: MemoryHints::Performance,
+            trace: Default::default(),
+            experimental_features: ExperimentalFeatures::disabled(),
+        })
         .await
         .expect("Failed to get device");
 
@@ -58,12 +59,17 @@ pub async fn create_graphics(window: Rc<Window>, proxy: EventLoopProxy<Graphics>
     let height = size.height.max(1);
     let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
     surface.configure(&device, &surface_config);
-    let (depth_view, depth_tex) = create_depth(&device, surface_config.width, surface_config.height);
+    let (depth_view, depth_tex) =
+        create_depth(&device, surface_config.width, surface_config.height);
     let layouts = create_bind_group_layouts(&device);
     let (render_pipeline, camera_bg, camera_buf, model_bgl) =
         create_pipeline(&device, surface_config.format, &layouts);
     let cam = make_camera(surface_config.width, surface_config.height);
-    queue.write_buffer(&camera_buf, 0, bytemuck::cast_slice(&[cam.view_proj.to_cols_array()]));
+    queue.write_buffer(
+        &camera_buf,
+        0,
+        bytemuck::cast_slice(&[cam.view_proj.to_cols_array()]),
+    );
 
     let model = load_gltf_model(
         &device,
@@ -143,16 +149,36 @@ impl Graphics {
         self.surface_config.width = new_size.width.max(1);
         self.surface_config.height = new_size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
-        let (dv, dt) = create_depth(&self.device, self.surface_config.width, self.surface_config.height);
+        let (dv, dt) = create_depth(
+            &self.device,
+            self.surface_config.width,
+            self.surface_config.height,
+        );
         self.depth_view = dv;
         self._depth_tex = dt;
-        update_camera_buffer(&self.queue, &self.camera_buf, self.surface_config.width, self.surface_config.height,
-                             self.yaw, self.pitch, self.radius, self.target);
+        update_camera_buffer(
+            &self.queue,
+            &self.camera_buf,
+            self.surface_config.width,
+            self.surface_config.height,
+            self.yaw,
+            self.pitch,
+            self.radius,
+            self.target,
+        );
     }
 
     pub fn draw(&mut self) {
-        update_camera_buffer(&self.queue, &self.camera_buf, self.surface_config.width, self.surface_config.height,
-                             self.yaw, self.pitch, self.radius, self.target);
+        update_camera_buffer(
+            &self.queue,
+            &self.camera_buf,
+            self.surface_config.width,
+            self.surface_config.height,
+            self.yaw,
+            self.pitch,
+            self.radius,
+            self.target,
+        );
 
         let frame = self
             .surface
@@ -179,7 +205,10 @@ impl Graphics {
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_view,
-                    depth_ops: Some(Operations { load: LoadOp::Clear(1.0), store: StoreOp::Store }),
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
@@ -191,7 +220,8 @@ impl Graphics {
             r_pass.set_bind_group(1, &self.model_bg, &[]);
 
             for mesh in &self.model.meshes {
-                let mat = &self.model.materials[mesh.material_id.min(self.model.materials.len() - 1)];
+                let mat =
+                    &self.model.materials[mesh.material_id.min(self.model.materials.len() - 1)];
                 r_pass.set_bind_group(2, &mat.bind_group, &[]);
 
                 r_pass.set_vertex_buffer(0, mesh.vbuf.slice(..));
@@ -215,7 +245,7 @@ impl Graphics {
                 let pos = glam::vec2(position.x as f32, position.y as f32);
                 if self.rotating {
                     let delta = (pos - self.last_cursor) * 0.005;
-                    self.yaw   -= delta.x;
+                    self.yaw -= delta.x;
                     self.pitch -= delta.y;
                 }
                 self.last_cursor = pos;
@@ -223,7 +253,7 @@ impl Graphics {
             WindowEvent::MouseWheel { delta, .. } => {
                 let d = match delta {
                     MouseScrollDelta::LineDelta(_x, y) => -*y * 0.25,
-                    MouseScrollDelta::PixelDelta(p)    => -(p.y as f32) * 0.001,
+                    MouseScrollDelta::PixelDelta(p) => -(p.y as f32) * 0.001,
                 };
                 self.radius = (self.radius + d).clamp(0.5, 50.0);
             }
@@ -234,7 +264,7 @@ impl Graphics {
     pub fn handle_device_event(&mut self, event: &DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
             if self.rotating {
-                self.yaw   -= (*dx as f32) * 0.0025;
+                self.yaw -= (*dx as f32) * 0.0025;
                 self.pitch -= (*dy as f32) * 0.0025;
             }
         }
